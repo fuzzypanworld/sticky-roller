@@ -1,0 +1,20 @@
+{
+  "name": "sticky-roller",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "server": "node server.mjs"
+  },
+  "dependencies": {
+    "cannon-es": "^0.20.0",
+    "three": "^0.179.1",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "vite": "^7.1.0"
+  }
+}

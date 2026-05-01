@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Sticky Roller</title>
+  </head>
+  <body>
+    <span id="size" hidden></span><span id="score" hidden></span>
+
+    <div id="hud" class="hidden">
+      <!-- top-left mission card -->
+      <div class="hud-mission">
+        <div class="mission-text">Eat <span id="missionGoal">20</span> Lamp Posts</div>
+        <div class="mission-bar"><div id="missionFill" class="mission-fill"></div></div>
+      </div>
+
+      <!-- top-center XP + timer -->
+      <div class="hud-top">
+        <div class="xp-row">
+          <div class="xp-icon">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 12a4 4 0 100-8 4 4 0 000 8zm0 2c-3.6 0-8 1.8-8 5v2h16v-2c0-3.2-4.4-5-8-5z" fill="#fff"/></svg>
+          </div>
+          <div class="xp-bar"><div id="xpFill" class="xp-fill"></div></div>
+        </div>
+        <div class="timer-pill">
+          <svg viewBox="0 0 24 24" width="14" height="14"><circle cx="12" cy="13" r="8" fill="none" stroke="#ffb84d" stroke-width="2.2"/><path d="M12 9v4l3 2" stroke="#ffb84d" stroke-width="2.2" stroke-linecap="round" fill="none"/><path d="M9 4h6" stroke="#ffb84d" stroke-width="2.2" stroke-linecap="round"/></svg>
+          <span id="timerText">03:00</span>
+        </div>
+      </div>
+
+      <!-- top-right kill counter -->
+      <div class="hud-kills">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 2C7 2 3 6 3 11c0 3 1.6 5.6 4 7v3a1 1 0 001 1h2v-2h2v2h2v-2h2a1 1 0 001-1v-3c2.4-1.4 4-4 4-7 0-5-4-9-9-9zm-3 9a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4z" fill="#fff"/></svg>
+        <span id="killCount">0</span>
+      </div>
+
+      <!-- nameplate above player -->
+      <div id="nameplate" class="nameplate">
+        <div class="np-lvl">LVL <span id="npLvl">1</span></div>
+        <div class="np-name">Player</div>
+        <div class="np-hp">
+          <div class="np-hp-icon"></div>
+          <div class="np-hp-bar"><div id="npHpFill" class="np-hp-fill"></div></div>
+          <div class="np-hp-text"><span id="npHpCur">0</span>/<span id="npHpMax">10</span></div>
+        </div>
+      </div>
+
+      <div class="hint-bottom">P1: WASD &nbsp;•&nbsp; P2: Arrow keys &nbsp;•&nbsp; C: camera • R: reset</div>
+
+      <!-- P1 joystick (left) -->
+      <div id="joystick" class="joystick joystick-left">
+        <div class="joy-ring"></div>
+        <div id="joyKnob" class="joy-knob"></div>
+        <div class="joy-label">P1</div>
+      </div>
+      <!-- P2 joystick (right) -->
+      <div id="joystick2" class="joystick joystick-right">
+        <div class="joy-ring joy-ring-2"></div>
+        <div id="joyKnob2" class="joy-knob joy-knob-2"></div>
+        <div class="joy-label">P2</div>
+      </div>
+    </div>
+
+    <canvas id="c"></canvas>
+
+    <div id="startScreen">
+      <div class="start-bg"></div>
+      <div class="start-card">
+        <div class="logo">
+          <div class="logo-mark">
+            <span class="ring r1"></span>
+            <span class="ring r2"></span>
+            <span class="ring r3"></span>
+            <span class="hole"></span>
+          </div>
+          <div class="brand">
+            <h1>STICKY ROLLER</h1>
+            <p class="tag">Swallow the city. Grow the void.</p>
+          </div>
+        </div>
+
+        <div class="map-select">
+          <div class="map-select-label">SELECT MAP</div>
+          <div class="map-buttons">
+            <button class="map-btn selected" data-map="1"><span class="m-num">1</span><span class="m-name">Downtown</span></button>
+            <button class="map-btn" data-map="2"><span class="m-num">2</span><span class="m-name">Suburbs</span></button>
+            <button class="map-btn" data-map="3"><span class="m-num">3</span><span class="m-name">Jungle</span></button>
+          </div>
+        </div>
+
+        <button id="playBtn" class="play-btn">
+          <span>PLAY</span>
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path d="M8 5v14l11-7L8 5z" fill="currentColor"/>
+          </svg>
+        </button>
+
+        <div class="controls">
+          <div class="kgrid">
+            <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Move</span></div>
+            <div><kbd>C</kbd><span>Camera</span></div>
+            <div><kbd>R</kbd><span>Reset</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script async src="https://vibej.am/2026/widget.js"></script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
