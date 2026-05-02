@@ -31,20 +31,37 @@
         </div>
       </div>
 
+      <!-- P2 toggle -->
+      <button id="p2Toggle" class="p2-toggle" type="button">P2: ON</button>
+
+      <!-- P2 size pill (visible only when P2 is on) -->
+      <div id="p2Status" class="p2-status visible" style="display:block">P2 LVL <span id="p2Lvl">1</span> &nbsp;•&nbsp; Size <span id="p2Size">1.0</span></div>
+
       <!-- top-right kill counter -->
       <div class="hud-kills">
         <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 2C7 2 3 6 3 11c0 3 1.6 5.6 4 7v3a1 1 0 001 1h2v-2h2v2h2v-2h2a1 1 0 001-1v-3c2.4-1.4 4-4 4-7 0-5-4-9-9-9zm-3 9a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4z" fill="#fff"/></svg>
         <span id="killCount">0</span>
       </div>
 
-      <!-- nameplate above player -->
+      <!-- P1 nameplate -->
       <div id="nameplate" class="nameplate">
-        <div class="np-lvl">LVL <span id="npLvl">1</span></div>
-        <div class="np-name">Player</div>
+        <div class="np-lvl" style="color:#6ad8ff">P1 LVL <span id="npLvl">1</span></div>
+        <div class="np-name">Player 1</div>
         <div class="np-hp">
           <div class="np-hp-icon"></div>
           <div class="np-hp-bar"><div id="npHpFill" class="np-hp-fill"></div></div>
           <div class="np-hp-text"><span id="npHpCur">0</span>/<span id="npHpMax">10</span></div>
+        </div>
+      </div>
+
+      <!-- P2 nameplate -->
+      <div id="nameplate2" class="nameplate">
+        <div class="np-lvl" style="color:#ff8a3d">P2 LVL <span id="npLvl2">1</span></div>
+        <div class="np-name">Player 2</div>
+        <div class="np-hp">
+          <div class="np-hp-icon" style="background:radial-gradient(circle at 35% 30%,#fff 0%,#ff9a3d 60%,#b25a1a 100%)"></div>
+          <div class="np-hp-bar"><div id="npHpFill2" class="np-hp-fill" style="background:linear-gradient(180deg,#ffc88a 0%,#d3661a 100%)"></div></div>
+          <div class="np-hp-text"><span id="npSize2">1.0</span></div>
         </div>
       </div>
 

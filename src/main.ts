@@ -92,6 +92,10 @@ scene.fog = new THREE.Fog(0xbcdcf5, 150, 380);
 }
 
 const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 600);
+const camera2 = new THREE.PerspectiveCamera(34, 1, 0.1, 600);
+const cam2Pos = new THREE.Vector3();
+const cam2Target = new THREE.Vector3();
+const cam2TargetSmoothed = new THREE.Vector3();
 
 // ---------- Lighting (soft, Hole.io-style flat look) ----------
 const hemi = new THREE.HemisphereLight(0xffffff, 0xb6d8f0, 1.55);
@@ -138,7 +142,7 @@ window.addEventListener("pointerdown", unlockAudio, { once: true });
 window.addEventListener("keydown", unlockAudio, { once: true });
 
 // Pac-Man "wakka" chomp: two quick pitch sweeps (high-low, low-high) for the classic chomp feel
-function playPickupSound(intensity: number) {
+function _playPickupSound_orig(intensity: number) {
   if (!audioUnlocked) return;
   const t0 = audioCtx.currentTime;
   const base = 260 + intensity * 60;
@@ -158,6 +162,8 @@ function playPickupSound(intensity: number) {
   makeChirp(0.00, base, base * 0.55, 0.07);  // wak-
   makeChirp(0.08, base * 0.55, base, 0.07);  // -ka
 }
+// Muted — was too irritating per user feedback
+function playPickupSound(_intensity: number) { void _playPickupSound_orig; }
 
 function playBreakSound() {
   if (!audioUnlocked) return;
@@ -271,7 +277,7 @@ function maybeHonk() {
   lastHonkAt = now;
 }
 
-function playYelp() {
+function playYelp() { return; /* muted — too irritating per user */
   if (!audioUnlocked) return;
   const t0 = audioCtx.currentTime;
   // A more dramatic scream — sustained "AAAAH!" with vibrato and a falling tail
@@ -580,6 +586,65 @@ function applyHoleScale() {
   holeGroup.scale.set(holeRadius, holeRadius, holeRadius);
 }
 applyHoleScale();
+
+// ---------- P2 hole (must be declared early; resetGame() touches it at init) ----------
+let p2Enabled = true;
+const holePos2 = new THREE.Vector3(0, 0, 0);
+const holeVel2 = new THREE.Vector3();
+let holeRadius2 = baseHoleRadius;
+let heading2 = 0;
+
+const holeGroup2 = new THREE.Group();
+const p2Disk = new THREE.Mesh(
+  new THREE.CircleGeometry(1, 48),
+  new THREE.MeshBasicMaterial({ color: 0x2a0a0a }),
+);
+p2Disk.rotation.x = -Math.PI / 2;
+p2Disk.renderOrder = 2;
+holeGroup2.add(p2Disk);
+const p2Rim = new THREE.Mesh(
+  new THREE.RingGeometry(0.97, 1.18, 48),
+  new THREE.MeshBasicMaterial({ color: 0xff8a3d, transparent: true, opacity: 0.95, side: THREE.DoubleSide }),
+);
+p2Rim.rotation.x = -Math.PI / 2;
+p2Rim.renderOrder = 2;
+holeGroup2.add(p2Rim);
+const p2Glow = new THREE.Mesh(
+  new THREE.RingGeometry(1.18, 1.45, 48),
+  new THREE.MeshBasicMaterial({ color: 0xffb37a, transparent: true, opacity: 0.35, side: THREE.DoubleSide }),
+);
+p2Glow.rotation.x = -Math.PI / 2;
+p2Glow.renderOrder = 2;
+holeGroup2.add(p2Glow);
+holeGroup2.position.y = 0.04;
+scene.add(holeGroup2);
+
+function applyHole2Scale() { holeGroup2.scale.set(holeRadius2, holeRadius2, holeRadius2); }
+applyHole2Scale();
+
+// Direction arrows (heading indicators) for both holes
+function makeArrowMesh(color: number) {
+  const g = new THREE.Group();
+  const shaft = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.35, 1.4),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
+  );
+  shaft.rotation.x = -Math.PI / 2;
+  shaft.position.z = -1.6;
+  g.add(shaft);
+  const tipGeo = new THREE.ConeGeometry(0.5, 0.7, 3);
+  const tip = new THREE.Mesh(tipGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95 }));
+  tip.rotation.x = -Math.PI / 2;
+  tip.rotation.y = Math.PI;
+  tip.position.set(0, 0, -2.6);
+  g.add(tip);
+  g.position.y = 0.05;
+  return g;
+}
+const arrowP1 = makeArrowMesh(0x4dc8ff);
+const arrowP2 = makeArrowMesh(0xff8a3d);
+scene.add(arrowP1);
+scene.add(arrowP2);
 
 // ---------- Confetti particle burst ----------
 type Particle = { life: number; max: number; vel: THREE.Vector3; mesh: THREE.Mesh };
@@ -2737,8 +2802,8 @@ function maybeAdvanceLevel() {
     level++;
     holeRadius = baseHoleRadius * (1 + (level - 1) * 0.32);
     applyHoleScale();
-    if (level % LEVELS_PER_MAP === 1 && level > 1) {
-      // Map cleared — load next map immediately
+    if (level % LEVELS_PER_MAP === 1 && level > 1 && !p2Enabled) {
+      // Map cleared — load next map (single-player only; in 2P, keep current map so P2 isn't yanked)
       const justCleared = map;
       map = Math.min(MAX_MAPS, map + 1);
       showLevelToast(`MAP ${justCleared} CLEARED!  →  MAP ${map}`, 2400);
@@ -2812,8 +2877,11 @@ const camTargetSmoothed = new THREE.Vector3(0, 0, 0);
 function resize() {
   const w = canvas.clientWidth, h = canvas.clientHeight;
   renderer.setSize(w, h, false);
+  // Aspect handled per-render in tick when split-screen is active.
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  camera2.aspect = w / h;
+  camera2.updateProjectionMatrix();
 }
 window.addEventListener("resize", resize);
 resize();
@@ -2823,19 +2891,11 @@ function updateCamera(dt: number) {
   const growth = clamp((holeRadius - baseHoleRadius) / 8, 0, 1);
 
   if (mode === "chase") {
-    // Two-player chase: follow midpoint, pull back based on player separation
-    const midX = (holePos.x + holePos2.x) * 0.5;
-    const midZ = (holePos.z + holePos2.z) * 0.5;
-    const sep = Math.hypot(holePos.x - holePos2.x, holePos.z - holePos2.z);
-    const sepBoost = clamp(sep / 30, 0, 1);
-    const dirX = Math.sin(heading);
-    const dirZ = -Math.cos(heading);
-    const dist = lerp(22, 38, growth) + sepBoost * 18;
-    const height = lerp(18, 30, growth) + sepBoost * 14;
-    const camX = midX - dirX * dist;
-    const camZ = midZ - dirZ * dist;
-    camTarget.set(midX + dirX * 4, holeRadius * 0.5, midZ + dirZ * 4);
-    camPos.set(camX, holeRadius + height, camZ);
+    // Fixed-orientation chase: camera always looks down -Z, only translates with hole.
+    const dist = lerp(22, 34, growth);
+    const height = lerp(18, 28, growth);
+    camTarget.set(holePos.x, holeRadius * 0.5, holePos.z - 4);
+    camPos.set(holePos.x, holeRadius + height, holePos.z + dist);
   } else if (mode === "topdown") {
     const height = lerp(28, 60, growth);
     camTarget.set(holePos.x, 0, holePos.z);
@@ -2869,6 +2929,18 @@ function updateCamera(dt: number) {
   }
 
   camera.lookAt(camTargetSmoothed);
+
+  // P2 camera (chase only) — fixed orientation, independent translation
+  if (p2Enabled) {
+    const growth2 = clamp((holeRadius2 - baseHoleRadius) / 8, 0, 1);
+    const dist = lerp(22, 34, growth2);
+    const height = lerp(18, 28, growth2);
+    cam2Target.set(holePos2.x, holeRadius2 * 0.5, holePos2.z - 4);
+    cam2Pos.set(holePos2.x, holeRadius2 + height, holePos2.z + dist);
+    cam2TargetSmoothed.lerp(cam2Target, 1 - Math.pow(0.0001, dt));
+    camera2.position.lerp(cam2Pos, 1 - Math.pow(0.001, dt));
+    camera2.lookAt(cam2TargetSmoothed);
+  }
 }
 
 // ---------- Controls (rolling ball, car-like steering) ----------
@@ -2898,7 +2970,7 @@ function updateControls(dt: number) {
     const jz = touchInput.z;
     const mag = Math.min(1, Math.hypot(jx, jz));
     // Desired heading: angle so that (sin(h), -cos(h)) points toward (jx, -jz)
-    const targetHeading = Math.atan2(jx, jz);
+    const targetHeading = Math.atan2(jx, -jz);
     // Smoothly rotate toward target heading (shortest arc)
     let dh = targetHeading - heading;
     while (dh > Math.PI) dh -= Math.PI * 2;
@@ -2970,7 +3042,7 @@ function updateControlsP2(dt: number) {
     const jx = touchInput2.x;
     const jz = touchInput2.z;
     const mag = Math.min(1, Math.hypot(jx, jz));
-    const targetHeading = Math.atan2(jx, jz);
+    const targetHeading = Math.atan2(jx, -jz);
     let dh = targetHeading - heading2;
     while (dh > Math.PI) dh -= Math.PI * 2;
     while (dh < -Math.PI) dh += Math.PI * 2;
@@ -3240,8 +3312,17 @@ function syncMeshes() {
   ballShadow.position.set(holePos.x, 0.025, holePos.z);
   ballShadow.scale.setScalar(holeRadius * 1.4);
   // P2 hole
+  holeGroup2.visible = p2Enabled;
   holeGroup2.position.set(holePos2.x, 0.04, holePos2.z);
   holeGroup2.scale.set(holeRadius2, holeRadius2, holeRadius2);
+  // Direction arrows
+  arrowP1.position.set(holePos.x, 0.06, holePos.z);
+  arrowP1.rotation.y = heading;
+  arrowP1.scale.setScalar(Math.max(1, holeRadius * 0.9));
+  arrowP2.visible = p2Enabled;
+  arrowP2.position.set(holePos2.x, 0.06, holePos2.z);
+  arrowP2.rotation.y = heading2;
+  arrowP2.scale.setScalar(Math.max(1, holeRadius2 * 0.9));
   for (const p of props) {
     if (p.stuck || p.falling) continue;
     if (p.npc || p.body.type === CANNON.Body.KINEMATIC) continue;
@@ -3250,40 +3331,7 @@ function syncMeshes() {
   }
 }
 
-// ---------- LOCAL 2-PLAYER (P2 hole) ----------
-const holePos2 = new THREE.Vector3(0, 0, 0);
-const holeVel2 = new THREE.Vector3();
-let holeRadius2 = baseHoleRadius;
-let heading2 = 0;
-
-const holeGroup2 = new THREE.Group();
-const p2Disk = new THREE.Mesh(
-  new THREE.CircleGeometry(1, 48),
-  new THREE.MeshBasicMaterial({ color: 0x2a0a0a }),
-);
-p2Disk.rotation.x = -Math.PI / 2;
-p2Disk.renderOrder = 2;
-holeGroup2.add(p2Disk);
-const p2Rim = new THREE.Mesh(
-  new THREE.RingGeometry(0.97, 1.18, 48),
-  new THREE.MeshBasicMaterial({ color: 0xff8a3d, transparent: true, opacity: 0.95, side: THREE.DoubleSide }),
-);
-p2Rim.rotation.x = -Math.PI / 2;
-p2Rim.renderOrder = 2;
-holeGroup2.add(p2Rim);
-const p2Glow = new THREE.Mesh(
-  new THREE.RingGeometry(1.18, 1.45, 48),
-  new THREE.MeshBasicMaterial({ color: 0xffb37a, transparent: true, opacity: 0.35, side: THREE.DoubleSide }),
-);
-p2Glow.rotation.x = -Math.PI / 2;
-p2Glow.renderOrder = 2;
-holeGroup2.add(p2Glow);
-holeGroup2.position.y = 0.04;
-scene.add(holeGroup2);
-
-function applyHole2Scale() { holeGroup2.scale.set(holeRadius2, holeRadius2, holeRadius2); }
-applyHole2Scale();
-
+// ---------- LOCAL 2-PLAYER (P2 swallow + PvP) ----------
 // P2 swallows props in a parallel pass — same rules but using holeRadius2.
 function swallowScanP2() {
   const tier = clamp(Math.floor(holeRadius2 / 0.6), 1, 7);
@@ -3486,6 +3534,58 @@ function startGame() {
   setTimeout(() => { if (startScreen) startScreen.style.display = "none"; }, 600);
 }
 playBtn?.addEventListener("click", startGame);
+playBtn?.addEventListener("pointerdown", startGame);
+playBtn?.addEventListener("touchstart", (e) => { e.preventDefault(); startGame(); }, { passive: false });
+startScreen?.addEventListener("click", startGame);
+// Mode-select overlay (single player vs local multiplayer)
+{
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;gap:18px;background:radial-gradient(900px 600px at 50% 40%, rgba(60,120,200,0.45), rgba(0,0,0,0.85));font-family:ui-sans-serif,system-ui";
+  overlay.innerHTML = `
+    <div style="background:rgba(10,18,38,0.85);border:1px solid rgba(255,255,255,0.15);border-radius:18px;padding:32px 36px;color:#fff;text-align:center;max-width:90vw">
+      <h1 style="margin:0 0 20px;font-size:28px;letter-spacing:2px">HOLE TOWN</h1>
+      <p style="margin:0 0 20px;opacity:0.7;font-size:13px;letter-spacing:1px">Eat the city. Eat each other.</p>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+        <button id="mode1" style="padding:14px 22px;font-weight:800;letter-spacing:1px;border:none;border-radius:999px;background:linear-gradient(180deg,#6ad8ff,#2aa5e8);color:#06122a;cursor:pointer;font-size:14px">SINGLE PLAYER</button>
+        <button id="mode2" style="padding:14px 22px;font-weight:800;letter-spacing:1px;border:none;border-radius:999px;background:linear-gradient(180deg,#ffd06b,#ff9a3d);color:#06122a;cursor:pointer;font-size:14px">2-PLAYER</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  function pick(mp: boolean) {
+    p2Enabled = mp;
+    overlay.remove();
+    if (startScreen) startScreen.style.display = "none";
+    startGame();
+    // Refresh button state after start
+    setTimeout(() => {
+      const btn = document.getElementById("p2Toggle") as HTMLButtonElement | null;
+      if (btn) {
+        btn.textContent = p2Enabled ? "P2: ON" : "P2: OFF";
+        btn.classList.toggle("off", !p2Enabled);
+      }
+      const j2 = document.getElementById("joystick2");
+      if (j2) j2.style.display = p2Enabled ? "" : "none";
+      const p2s = document.getElementById("p2Status");
+      if (p2s) (p2s as HTMLElement).style.display = p2Enabled ? "block" : "none";
+    }, 0);
+  }
+  document.getElementById("mode1")?.addEventListener("click", () => pick(false));
+  document.getElementById("mode2")?.addEventListener("click", () => pick(true));
+}
+
+// P2 toggle button (HUD)
+const p2ToggleBtn = document.getElementById("p2Toggle") as HTMLButtonElement | null;
+function refreshP2Btn() {
+  if (!p2ToggleBtn) return;
+  p2ToggleBtn.textContent = p2Enabled ? "P2: ON" : "P2: OFF";
+  p2ToggleBtn.classList.toggle("off", !p2Enabled);
+  const j2 = document.getElementById("joystick2");
+  if (j2) j2.style.display = p2Enabled ? "" : "none";
+  const p2s = document.getElementById("p2Status");
+  if (p2s) (p2s as HTMLElement).style.display = p2Enabled ? "block" : "none";
+}
+p2ToggleBtn?.addEventListener("click", () => { p2Enabled = !p2Enabled; refreshP2Btn(); });
+refreshP2Btn();
 window.addEventListener("keydown", (e) => {
   if (!gameStarted && (e.key === "Enter" || e.key === " ")) {
     e.preventDefault();
@@ -3547,10 +3647,10 @@ function tick() {
 
   while (acc >= fixedDt) {
     updateControls(fixedDt);
-    updateControlsP2(fixedDt);
+    if (p2Enabled) updateControlsP2(fixedDt);
     swallowScan();
-    swallowScanP2();
-    checkPvP();
+    if (p2Enabled) swallowScanP2();
+    if (p2Enabled) checkPvP();
     checkPoliceContact(fixedDt);
     advanceFalling(fixedDt);
     acc -= fixedDt;
@@ -3588,25 +3688,75 @@ function tick() {
   }
   if (elKillCount) elKillCount.textContent = String(killCount);
 
-  // Nameplate above hole — project world pos to screen
-  if (elNameplate && gameStarted) {
-    const wp = new THREE.Vector3();
-    holeGroup.getWorldPosition(wp);
-    const proj = wp.clone().project(camera);
-    if (proj.z < 1) {
-      const sx = (proj.x * 0.5 + 0.5) * window.innerWidth;
-      const sy = (-proj.y * 0.5 + 0.5) * window.innerHeight;
-      // offset upward proportional to hole radius (rough screen-space lift)
-      const lift = 70 + holeRadius * 6;
-      elNameplate.style.left = `${sx}px`;
-      elNameplate.style.top = `${sy - lift}px`;
-      elNameplate.classList.add("visible");
-      if (elNpLvl) elNpLvl.textContent = String(level);
-      if (elNpHpFill) elNpHpFill.style.width = `${xpFrac * 100}%`;
-      if (elNpHpCur) elNpHpCur.textContent = String(itemsEatenThisLevel);
-      if (elNpHpMax) elNpHpMax.textContent = String(itemsNeeded);
-    } else {
-      elNameplate.classList.remove("visible");
+  // P2 size + level readout
+  const elP2Size = document.getElementById("p2Size");
+  if (elP2Size) elP2Size.textContent = holeRadius2.toFixed(1);
+  const elP2Lvl = document.getElementById("p2Lvl");
+  if (elP2Lvl) elP2Lvl.textContent = String(clamp(Math.floor(holeRadius2 / 0.6), 1, 8));
+
+  // Nameplates above each hole — split-screen aware
+  if (gameStarted) {
+    const W = window.innerWidth, H = window.innerHeight;
+    const portrait = H > W;
+    // Viewport regions for each camera
+    let p1ViewX = 0, p1ViewY = 0, p1ViewW = W, p1ViewH = H;
+    let p2ViewX = 0, p2ViewY = 0, p2ViewW = W, p2ViewH = H;
+    if (p2Enabled) {
+      if (portrait) {
+        p1ViewW = W; p1ViewH = Math.floor(H / 2); p1ViewY = 0;
+        p2ViewW = W; p2ViewH = Math.floor(H / 2); p2ViewY = Math.floor(H / 2);
+      } else {
+        p1ViewW = Math.floor(W / 2); p1ViewH = H;
+        p2ViewW = W - Math.floor(W / 2); p2ViewH = H; p2ViewX = Math.floor(W / 2);
+      }
+    }
+
+    if (elNameplate) {
+      const wp = new THREE.Vector3();
+      holeGroup.getWorldPosition(wp);
+      const proj = wp.clone().project(camera);
+      if (proj.z < 1) {
+        const sx = p1ViewX + (proj.x * 0.5 + 0.5) * p1ViewW;
+        const sy = p1ViewY + (-proj.y * 0.5 + 0.5) * p1ViewH;
+        const lift = 70 + holeRadius * 6;
+        elNameplate.style.left = `${sx}px`;
+        elNameplate.style.top = `${sy - lift}px`;
+        elNameplate.classList.add("visible");
+        if (elNpLvl) elNpLvl.textContent = String(level);
+        if (elNpHpFill) elNpHpFill.style.width = `${xpFrac * 100}%`;
+        if (elNpHpCur) elNpHpCur.textContent = String(itemsEatenThisLevel);
+        if (elNpHpMax) elNpHpMax.textContent = String(itemsNeeded);
+      } else {
+        elNameplate.classList.remove("visible");
+      }
+    }
+
+    // P2 nameplate
+    const elNameplate2 = document.getElementById("nameplate2");
+    if (elNameplate2) {
+      if (!p2Enabled) {
+        elNameplate2.classList.remove("visible");
+      } else {
+        const wp2 = new THREE.Vector3();
+        holeGroup2.getWorldPosition(wp2);
+        const proj2 = wp2.clone().project(camera2);
+        if (proj2.z < 1) {
+          const sx = p2ViewX + (proj2.x * 0.5 + 0.5) * p2ViewW;
+          const sy = p2ViewY + (-proj2.y * 0.5 + 0.5) * p2ViewH;
+          const lift = 70 + holeRadius2 * 6;
+          elNameplate2.style.left = `${sx}px`;
+          elNameplate2.style.top = `${sy - lift}px`;
+          elNameplate2.classList.add("visible");
+          const e1 = document.getElementById("npLvl2");
+          const e2 = document.getElementById("npHpFill2") as HTMLElement | null;
+          const e3 = document.getElementById("npSize2");
+          if (e1) e1.textContent = String(clamp(Math.floor(holeRadius2 / 0.6), 1, 8));
+          if (e2) e2.style.width = `${clamp((holeRadius2 - baseHoleRadius) / (baseHoleRadius * 15), 0, 1) * 100}%`;
+          if (e3) e3.textContent = holeRadius2.toFixed(1);
+        } else {
+          elNameplate2.classList.remove("visible");
+        }
+      }
     }
   }
 
@@ -3632,7 +3782,41 @@ function tick() {
 
   syncMeshes();
   updateCamera(dt);
-  renderer.render(scene, camera);
+
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  if (p2Enabled) {
+    const portrait = H > W;
+    renderer.setScissorTest(true);
+    if (portrait) {
+      // P1 top half, P2 bottom half
+      const half = Math.floor(H / 2);
+      camera.aspect = W / half; camera.updateProjectionMatrix();
+      camera2.aspect = W / half; camera2.updateProjectionMatrix();
+      renderer.setViewport(0, half, W, half);
+      renderer.setScissor(0, half, W, half);
+      renderer.render(scene, camera);
+      renderer.setViewport(0, 0, W, half);
+      renderer.setScissor(0, 0, W, half);
+      renderer.render(scene, camera2);
+    } else {
+      // P1 left half, P2 right half
+      const half = Math.floor(W / 2);
+      camera.aspect = half / H; camera.updateProjectionMatrix();
+      camera2.aspect = half / H; camera2.updateProjectionMatrix();
+      renderer.setViewport(0, 0, half, H);
+      renderer.setScissor(0, 0, half, H);
+      renderer.render(scene, camera);
+      renderer.setViewport(half, 0, W - half, H);
+      renderer.setScissor(half, 0, W - half, H);
+      renderer.render(scene, camera2);
+    }
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, W, H);
+  } else {
+    camera.aspect = W / H; camera.updateProjectionMatrix();
+    renderer.setViewport(0, 0, W, H);
+    renderer.render(scene, camera);
+  }
   drawMinimap();
   requestAnimationFrame(tick);
 }
